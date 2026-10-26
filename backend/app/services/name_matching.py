@@ -41,7 +41,8 @@ def match_customers(query: str, customers) -> list[dict]:
     for customer in customers:
         best, reason = _name_score(query_tokens, customer.display_name), "naam"
         for alias in customer.aliases:
-            score = _name_score(query_tokens, alias)
+            alias_name = getattr(alias, "alias", alias)
+            score = _name_score(query_tokens, alias_name)
             if score > best:
                 best, reason = score, "nickname"
         if best >= THRESHOLD:

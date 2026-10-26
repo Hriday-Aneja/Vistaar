@@ -3,12 +3,13 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from langgraph.checkpoint.postgres import PostgresSaver
 
-from app.agents.graph import build_graph
+from app import tuning
 from app.api import (
     auth,
+    distributors,
     health,
+    impact,
     khata,
     orders,
     prices,
@@ -22,24 +23,24 @@ from app.api import (
 from app.config import get_settings
 from app.db import models  # noqa: F401
 from app.db.session import Base, engine
+from app.startup_checks import parse_origins, secret_problems
 
 settings = get_settings()
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(_: FastAPI):
+    problems = secret_problems(settings.env, tuning.PHONE_SECRET)
+    if problems:
+        raise RuntimeError(
+            "Refusing to start with ENV="
+            + settings.env
+            + ": "
+            + "; ".join(problems)
+        )
+
     Base.metadata.create_all(engine)
-
-    checkpoint_url = settings.database_url.replace(
-        "postgresql+psycopg://",
-        "postgresql://",
-        1,
-    )
-
-    with PostgresSaver.from_conn_string(checkpoint_url) as checkpointer:
-        checkpointer.setup()
-        app.state.order_graph = build_graph(checkpointer)
-        yield
+    yield
 
 
 app = FastAPI(
@@ -50,7 +51,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=parse_origins(settings.cors_origins),
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -66,6 +67,8 @@ for module in (
     khata,
     pulse,
     prices,
+    impact,
+    distributors,
     stream,
 ):
     app.include_router(module.router)

@@ -28,3 +28,6 @@ data/seed/*.csv
 
 *.db
 vistaar.db
+
+# celery beat state
+celerybeat-schedule*

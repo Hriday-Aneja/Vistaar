@@ -46,13 +46,19 @@ def cohort_node(state: OrderState) -> OrderState:
 
 def negotiate_node(state: OrderState) -> OrderState:
     with SessionLocal() as db:
-        chosen, events = bulk.negotiate(db, state["pooled_demand"], date.today())
+        # real shops only negotiate with real distributors
+        demo = db.get(Shop, state["shop_id"]).is_demo
+        chosen, events = bulk.negotiate(
+            db,
+            state["pooled_demand"],
+            date.today(),
+            demo=demo,
+        )
     return {
         "chosen": chosen,
         "auction_log": events,
         "status": "awaiting_approval",
     }
-
 
 def place_order_node(
     state: OrderState,
@@ -92,4 +98,3 @@ def build_graph(checkpointer=None):
         checkpointer=checkpointer,
         interrupt_before=["place_order"],
     )
-

@@ -63,3 +63,139 @@ def test_bulk_plan_requires_approval_then_orders(client):
     done = client.post(f"/api/orders/{plan['thread_id']}/approve", headers=h).json()
     assert done["status"] == "ordered" and done["order_ids"]
     assert client.get("/health").json()["audit_chain"]["ok"] is True
+
+
+def test_negotiation_stream_replays_auction(client, monkeypatch):
+    from starlette.websockets import WebSocketDisconnect
+
+    monkeypatch.setattr("app.api.stream.REPLAY_DELAY_S", 0)
+    h = _login(client)
+    plan = client.post("/api/orders/plan", headers=h).json()
+    token = h["Authorization"].split(" ")[1]
+    bids = []
+    with client.websocket_connect(f"/ws/negotiation/{plan['thread_id']}?token={token}") as ws:
+        while True:
+            msg = ws.receive_json()
+            if msg["event"] == "done":
+                break
+            if msg["event"] == "bid":
+                bids.append(msg)
+    assert len(bids) == len(plan["auction_log"])
+    with client.websocket_connect(f"/ws/negotiation/{plan['thread_id']}?token=bad") as ws:
+        with pytest.raises(WebSocketDisconnect):
+            ws.receive_json()
+
+
+def test_impact_numbers_and_labels(client):
+    h = _login(client)
+    plan = client.post("/api/orders/plan", headers=h).json()
+    client.post(f"/api/orders/{plan['thread_id']}/approve", headers=h)
+    r = client.get("/api/impact", headers=h).json()
+    assert r["simulated"] is True
+    assert r["bulk"]["orders"] >= 1 and "assumption" in r["bulk"]["basis"]
+    assert r["pool"]["shops"] >= 5
+    assert r["udhaar"]["recovered_total"] >= 0
+    assert client.get("/api/impact").status_code == 401
+
+
+def test_bulk_plan_explains_each_quantity(client):
+    plan = client.post("/api/orders/plan", headers=_login(client)).json()
+    mine = [ln for ln in plan["lines"] if ln["my_qty"] > 0]
+    assert mine and all(ln["reason"] and "aur chahiye" in ln["reason"] for ln in mine)
+    assert "not ML" in plan["forecast_method"]
+
+
+def test_sales_drop_alert_for_the_dropping_shop(client):
+    r = client.get("/api/pulse/drops", headers=_login(client, "9000000006")).json()
+    assert r["drop"] is not None and r["drop"]["drop_pct"] >= 40
+    assert "through" in client.get("/api/pulse/drops", headers=_login(client)).json()
+
+
+def test_pending_plan_survives_a_restart(client, monkeypatch):
+    from app.agents.graph import build_graph
+    from app.api import orders
+
+    h = _login(client)
+    plan = client.post("/api/orders/plan", headers=h).json()
+    monkeypatch.setattr(orders, "_graph", build_graph())  # fresh in-memory state, like a server restart
+    done = client.post(f"/api/orders/{plan['thread_id']}/approve", headers=h).json()
+    assert done["status"] == "ordered" and done["order_ids"]
+
+
+def test_approve_twice_returns_same_orders_and_only_owner_can_approve(client):
+    h = _login(client)
+    plan = client.post("/api/orders/plan", headers=h).json()
+    url = f"/api/orders/{plan['thread_id']}/approve"
+    assert client.post(url, headers=_login(client, "9000000002")).status_code == 404
+    first = client.post(url, headers=h).json()
+    again = client.post(url, headers=h).json()
+    assert first["order_ids"] == again["order_ids"] and again["status"] == "ordered"
+    assert client.post("/api/orders/unknown-thread/approve", headers=h).status_code == 404
+
+
+def _register_real(client, phone):
+    r = client.post("/api/auth/register", json={"phone": phone, "name": "Asha Devi", "password": "secret123",
+                    "shop_name": "Asha Kirana", "area": "Rohini", "lat": 28.7, "lng": 77.1})
+    assert r.status_code == 201
+    return {"Authorization": "Bearer " + r.json()["token"]}
+
+
+def _quote(product, **over):
+    from datetime import date, timedelta
+    body = {"product_id": product["id"], "unit_price": round(product["mrp"] * 0.8, 2), "min_qty": 20,
+            "delivery_days": 2, "valid_till": (date.today() + timedelta(days=7)).isoformat()}
+    return {**body, **over}
+
+
+def test_real_shop_world_is_separate_from_demo(client):
+    real = _register_real(client, "9111111111")
+    assert client.get("/api/distributors", headers=real).json() == []
+    assert client.get("/api/prices/radar", headers=real).json() == []
+    plan = client.post("/api/orders/plan", headers=real).json()
+    assert plan["lines"] == [] and plan["cohort_size"] == 1
+
+    d = client.post("/api/distributors", json={"name": "Real Wholesale"}, headers=real).json()
+    atta = client.get("/api/products", params={"q": "Atta"}, headers=real).json()[0]
+    assert client.post(f"/api/distributors/{d['id']}/quotes", json=_quote(atta), headers=real).status_code == 201
+    radar = client.get("/api/prices/radar", headers=real).json()
+    assert any(q["distributor"] == "Real Wholesale" and q["after_auction"] == q["unit_price"]
+               for row in radar for q in row["quotes"])
+
+    demo = _login(client)
+    assert "Real Wholesale" not in [x["name"] for x in client.get("/api/distributors", headers=demo).json()]
+    assert not any(q["distributor"] == "Real Wholesale"
+                   for row in client.get("/api/prices/radar", headers=demo).json() for q in row["quotes"])
+
+
+def test_quote_rules_and_ownership(client):
+    owner = _register_real(client, "9122222222")
+    other = _register_real(client, "9133333333")
+    d = client.post("/api/distributors", json={"name": "Owner Traders", "phone": "9876543210"}, headers=owner).json()
+    atta = client.get("/api/products", params={"q": "Atta"}, headers=owner).json()[0]
+    url = f"/api/distributors/{d['id']}/quotes"
+    assert client.post(url, json=_quote(atta, unit_price=atta["mrp"] + 1), headers=owner).status_code == 400
+    assert client.post(url, json=_quote(atta, unit_price=0.5), headers=owner).status_code in (400, 422)
+    assert client.post(url, json=_quote(atta, valid_till="2000-01-01"), headers=owner).status_code == 400
+    assert client.post(url, json=_quote(atta), headers=other).status_code == 404
+    assert client.post(url, json=_quote(atta), headers=_login(client)).status_code == 404
+    assert client.post(url, json=_quote(atta), headers=owner).status_code == 201
+    assert client.post(url, json=_quote(atta, unit_price=round(atta["mrp"] * 0.7, 2)), headers=owner).status_code == 201
+    mine = [x for x in client.get("/api/distributors", headers=owner).json() if x["id"] == d["id"]][0]
+    assert len(mine["quotes"]) == 1  # the new quote replaced the old one
+
+
+def test_login_is_rate_limited_per_phone_even_for_unknown_numbers(client):
+    body = {"phone": "9000000099", "password": "wrong-pass"}  # no such account
+    for _ in range(5):
+        assert client.post("/api/auth/login", json=body).status_code == 401
+    r = client.post("/api/auth/login", json=body)
+    assert r.status_code == 429 and int(r.headers["Retry-After"]) > 0
+
+
+def test_good_login_resets_the_failure_count(client):
+    bad = {"phone": "9000000004", "password": "wrong-pass"}
+    for _ in range(3):
+        assert client.post("/api/auth/login", json=bad).status_code == 401
+    assert client.post("/api/auth/login", json={"phone": "9000000004", "password": "vistaar123"}).status_code == 200
+    for _ in range(3):  # 6 wrong tries in total, but the count restarted after the good login
+        assert client.post("/api/auth/login", json=bad).status_code == 401

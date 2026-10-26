@@ -55,7 +55,8 @@ def pulse_for(db: Session, shop: Shop, today: date) -> dict:
             spikes.setdefault(product_id, {})[shop_id] = spike
 
     events = db.scalars(select(EventCalendar).where(EventCalendar.start_date <= today,
-                                                    EventCalendar.end_date >= today)).all()
+                                                    EventCalendar.end_date >= today,
+                                                    EventCalendar.is_demo == shop.is_demo)).all()
     alerts = []
     for product_id, by_shop in spikes.items():
         if len(by_shop) < 2:

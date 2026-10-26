@@ -13,6 +13,12 @@ def test_ignores_filler_words_and_matches_alias():
     assert hits and hits[0]["customer"].display_name == "Rahul Verma"
 
 
+def test_matches_customeralias_like_objects():
+    people = [cust("Rahul Verma", NS(alias="Rahul bhai")), cust("Sunita Devi", NS(alias="Sunita aunty"))]
+    hits = match_customers("Rahul bhai ko udhaar du?", people)
+    assert hits and hits[0]["customer"].display_name == "Rahul Verma"
+
+
 def test_spelling_variants_match():
     assert match_customers("Raahul", [cust("Rahul Verma")])
 

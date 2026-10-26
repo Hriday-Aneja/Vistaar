@@ -111,6 +111,8 @@ def build():
                 r = rate
                 if pname == "Ice Cream Cone" and si in spike_shops and d <= 1:
                     r = rate * 3.2
+                if si == 5 and 1 <= d <= 3:
+                    r = rate * 0.3  # sales-drop demo: the last three days before today are well below normal
                 qty = max(0, round(rng.gauss(r, max(0.6, rate * 0.12))))
                 if qty:
                     db.add(m.Sale(
@@ -134,11 +136,11 @@ def build():
 
     for kind, label, start, end, cats, action in EVENTS:
         db.add(m.EventCalendar(kind=kind, label=label, start_date=TODAY + timedelta(days=start),
-                               end_date=TODAY + timedelta(days=end), categories=cats, suggested_action=action))
+                               end_date=TODAY + timedelta(days=end), categories=cats, suggested_action=action, is_demo=True))
 
-    distributors = [m.Distributor(name="Agarwal Wholesale", phone="9100000001", floor_ratio=0.90),
-                    m.Distributor(name="Delhi Bulk Traders", phone="9100000002", floor_ratio=0.88),
-                    m.Distributor(name="Sai Distributors", phone="9100000003", floor_ratio=0.92)]
+    distributors = [m.Distributor(name="Agarwal Wholesale", phone="9100000001", floor_ratio=0.90, is_demo=True),
+                    m.Distributor(name="Delhi Bulk Traders", phone="9100000002", floor_ratio=0.88, is_demo=True),
+                    m.Distributor(name="Sai Distributors", phone="9100000003", floor_ratio=0.92, is_demo=True)]
     db.add_all(distributors)
     db.flush()
     # (price factor vs MRP, min qty, delivery days). min_qty is why pooling matters: a lone shop
@@ -150,7 +152,7 @@ def build():
             if di == 2 and p.name == "Atta 5kg":
                 factor = 0.97  # deliberately inflated quote for the Fair-Price Radar demo
             db.add(m.DistributorQuote(distributor_id=d.id, product_id=p.id, unit_price=round(p.mrp * factor, 2),
-                                      min_qty=min_qty, delivery_days=days, valid_till=TODAY + timedelta(days=7)))
+                                      min_qty=min_qty, delivery_days=days, valid_till=TODAY + timedelta(days=30)))
 
     # Past purchase orders from other pools: the benchmark the Price Radar compares quotes against.
     db.flush()

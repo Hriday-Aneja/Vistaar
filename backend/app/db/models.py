@@ -150,7 +150,7 @@ class EventCalendar(Base):
     end_date: Mapped[date] = mapped_column(Date)
     categories: Mapped[list] = mapped_column(JSON)
     suggested_action: Mapped[str] = mapped_column(String(200))
-
+    is_demo: Mapped[bool] = mapped_column(Boolean, default=False)  # the demo calendar is not shown to real shops
 
 class PulseAlert(Base):
     __tablename__ = "pulse_alerts"
@@ -172,6 +172,8 @@ class Distributor(Base):
     phone: Mapped[str] = mapped_column(String(10), default="")
     # Lowest price this distributor will go to in a reverse auction, as a share of its quote.
     floor_ratio: Mapped[float] = mapped_column(Float, default=0.9)
+    is_demo: Mapped[bool] = mapped_column(Boolean, default=False)  # demo distributors never serve real shops
+    added_by_shop_id: Mapped[Optional[int]] = mapped_column(ForeignKey("shops.id"), nullable=True)
 
 
 class DistributorQuote(Base):
@@ -209,13 +211,14 @@ class AuditLog(Base):
     hash: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime)
 
-class OrderPlan(Base):
-    __tablename__ = "order_plans"
 
+class PlanThread(Base):
+    """A bulk-buy plan waiting for the merchant's approval. Kept in the DB so a restart does not lose it."""
+    __tablename__ = "plan_threads"
     thread_id: Mapped[str] = mapped_column(String(40), primary_key=True)
     shop_id: Mapped[int] = mapped_column(ForeignKey("shops.id"), index=True)
-    status: Mapped[str] = mapped_column(
-        String(30),
-        default="awaiting_approval",
-    )
+    status: Mapped[str] = mapped_column(String(12), default="planned")  # planned | ordering | ordered
+    state: Mapped[dict] = mapped_column(JSON)  # needs_by_shop, chosen, auction_log, festival_multiplier
+    order_ids: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    audit_hash: Mapped[str] = mapped_column(String(64), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

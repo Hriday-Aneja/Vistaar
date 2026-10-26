@@ -1,4 +1,4 @@
-.PHONY: up down logs seed test fmt
+.PHONY: up down logs seed reset-demo test fmt
 
 up:
 	cp -n .env.example .env || true
@@ -9,6 +9,9 @@ down:
 
 seed:
 	docker compose exec backend python -m app.seed
+
+reset-demo:
+	docker compose exec backend python -m app.reset_demo
 
 logs:
 	docker compose logs -f backend worker

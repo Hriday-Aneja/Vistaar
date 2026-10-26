@@ -1,6 +1,7 @@
 """Mohalla Bulk-Buy: DB-backed helpers used by the LangGraph pipeline (agents/graph.py)."""
 from datetime import date, timedelta
 from math import ceil
+from typing import Optional
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -42,16 +43,21 @@ def pooled_demand(per_shop: dict[int, dict[int, int]]) -> dict[int, int]:
     return {int(p): q for p, q in raw.items()}
 
 
-def paid_price_history(db: Session, product_id: int, days: int = 30) -> list[float]:
+def paid_price_history(db: Session, product_id: int, days: int = 30, demo: Optional[bool] = None) -> list[float]:
+    """Prices paid on approved orders. With demo set, only orders from that world count, so real shops are
+    never benchmarked against the seeded demo orders (and the other way round)."""
     since = utcnow() - timedelta(days=days)
+    world = {d.id: d.is_demo for d in db.scalars(select(Distributor))}
     prices = []
     for po in db.scalars(select(PurchaseOrder).where(PurchaseOrder.created_at >= since,
                                                      PurchaseOrder.status == "approved")):
+        if demo is not None and world.get(po.distributor_id) != demo:
+            continue
         prices += [float(line["unit_price"]) for line in po.lines if line["product_id"] == product_id]
     return prices
 
 
-def negotiate(db: Session, pooled: dict[int, int], today: date) -> tuple[list[dict], list[dict]]:
+def negotiate(db: Session, pooled: dict[int, int], today: date, demo: bool) -> tuple[list[dict], list[dict]]:
     """For each pooled product: eligible quotes (pooled qty unlocks min-qty), price-radar flags,
     reverse auction, then the deterministic margin guardrail. Returns (chosen, auction_events)."""
     st = get_settings()
@@ -61,11 +67,11 @@ def negotiate(db: Session, pooled: dict[int, int], today: date) -> tuple[list[di
         rows = db.execute(
             select(DistributorQuote, Distributor).join(Distributor, DistributorQuote.distributor_id == Distributor.id)
             .where(DistributorQuote.product_id == product_id, DistributorQuote.valid_till >= today,
-                   DistributorQuote.min_qty <= qty)
+                   DistributorQuote.min_qty <= qty, Distributor.is_demo == demo)
         ).all()
         if not rows:
             continue
-        bench = benchmark(paid_price_history(db, product_id))
+        bench = benchmark(paid_price_history(db, product_id, demo=demo))
         offers = {str(q.distributor_id): q.unit_price for q, _ in rows}
         floors = {str(q.distributor_id): round(q.unit_price * d.floor_ratio, 2) for q, d in rows}
         flags = {k: flag_quote(v, bench) for k, v in offers.items()}

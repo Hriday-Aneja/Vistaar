@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://vistaar:vistaar@db:5432/vistaar"
     redis_url: str = "redis://redis:6379/0"
     jwt_secret: str = "change-me"
+    cors_origins: str = "http://localhost:3000"  # comma-separated; set to your frontend URL(s) when deployed
 
     gemini_api_key: str = ""
     groq_api_key: str = ""
