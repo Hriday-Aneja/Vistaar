@@ -150,7 +150,7 @@ class EventCalendar(Base):
     end_date: Mapped[date] = mapped_column(Date)
     categories: Mapped[list] = mapped_column(JSON)
     suggested_action: Mapped[str] = mapped_column(String(200))
-
+    is_demo: Mapped[bool] = mapped_column(Boolean, default=False)  # the demo calendar is not shown to real shops
 
 class PulseAlert(Base):
     __tablename__ = "pulse_alerts"
@@ -172,6 +172,8 @@ class Distributor(Base):
     phone: Mapped[str] = mapped_column(String(10), default="")
     # Lowest price this distributor will go to in a reverse auction, as a share of its quote.
     floor_ratio: Mapped[float] = mapped_column(Float, default=0.9)
+    is_demo: Mapped[bool] = mapped_column(Boolean, default=False)  # demo distributors never serve real shops
+    added_by_shop_id: Mapped[Optional[int]] = mapped_column(ForeignKey("shops.id"), nullable=True)
 
 
 class DistributorQuote(Base):

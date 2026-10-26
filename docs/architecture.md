@@ -5,17 +5,20 @@ Merchant (Next.js, mobile-first)
         |  Bearer token
    FastAPI /api/*
    |-- auth, stock, shops
-   |-- orders  --> LangGraph: forecast -> cohort -> negotiate -> [approval gate] -> place_order
+   |-- orders  --> LangGraph: forecast -> cohort -> negotiate -> [approval gate]; plan saved in plan_threads,
+   |                 approve places the orders from the saved plan (idempotent, owner only)
+   |-- stream  --> /ws/negotiation/{thread_id}: replays the saved auction log
    |                 |           |           |
    |            inventory     privacy     price_radar (benchmark, flags, reverse auction)
    |            (sales rate)  (k-anon + DP)  + pricing_rules (margin guardrail)
    |-- swaps   --> swap_engine -> swap_scoring + swap_solver (min-cost flow)
    |-- udhaar  --> name_matching -> trust (cross-shop view) -> privacy (keyed hash + noise) + trust_scoring
    |-- khata   --> reminders + upi (draft, then merchant sends)
-   |-- pulse   --> pulse_stats (z-score) + event calendar
+   |-- pulse   --> pulse_stats (z-score) + event calendar; sales_drop (drop_stats) for a shop's own sales
+   |-- impact  --> savings estimate, pool size, udhaar recovered, swaps moved
    |-- prices  --> price_radar
    |
-   PostgreSQL (PostGIS image)    audit_log (hash chain)    Celery + Redis (hourly pulse monitor)
+   PostgreSQL (PostGIS image)    audit_log (hash chain)    Celery + Redis (hourly pulse monitor, daily sales-drop monitor)
 ```
 
 ## Swap Engine in one paragraph

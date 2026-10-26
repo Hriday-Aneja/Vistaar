@@ -131,3 +131,71 @@ def test_approve_twice_returns_same_orders_and_only_owner_can_approve(client):
     again = client.post(url, headers=h).json()
     assert first["order_ids"] == again["order_ids"] and again["status"] == "ordered"
     assert client.post("/api/orders/unknown-thread/approve", headers=h).status_code == 404
+
+
+def _register_real(client, phone):
+    r = client.post("/api/auth/register", json={"phone": phone, "name": "Asha Devi", "password": "secret123",
+                    "shop_name": "Asha Kirana", "area": "Rohini", "lat": 28.7, "lng": 77.1})
+    assert r.status_code == 201
+    return {"Authorization": "Bearer " + r.json()["token"]}
+
+
+def _quote(product, **over):
+    from datetime import date, timedelta
+    body = {"product_id": product["id"], "unit_price": round(product["mrp"] * 0.8, 2), "min_qty": 20,
+            "delivery_days": 2, "valid_till": (date.today() + timedelta(days=7)).isoformat()}
+    return {**body, **over}
+
+
+def test_real_shop_world_is_separate_from_demo(client):
+    real = _register_real(client, "9111111111")
+    assert client.get("/api/distributors", headers=real).json() == []
+    assert client.get("/api/prices/radar", headers=real).json() == []
+    plan = client.post("/api/orders/plan", headers=real).json()
+    assert plan["lines"] == [] and plan["cohort_size"] == 1
+
+    d = client.post("/api/distributors", json={"name": "Real Wholesale"}, headers=real).json()
+    atta = client.get("/api/products", params={"q": "Atta"}, headers=real).json()[0]
+    assert client.post(f"/api/distributors/{d['id']}/quotes", json=_quote(atta), headers=real).status_code == 201
+    radar = client.get("/api/prices/radar", headers=real).json()
+    assert any(q["distributor"] == "Real Wholesale" and q["after_auction"] == q["unit_price"]
+               for row in radar for q in row["quotes"])
+
+    demo = _login(client)
+    assert "Real Wholesale" not in [x["name"] for x in client.get("/api/distributors", headers=demo).json()]
+    assert not any(q["distributor"] == "Real Wholesale"
+                   for row in client.get("/api/prices/radar", headers=demo).json() for q in row["quotes"])
+
+
+def test_quote_rules_and_ownership(client):
+    owner = _register_real(client, "9122222222")
+    other = _register_real(client, "9133333333")
+    d = client.post("/api/distributors", json={"name": "Owner Traders", "phone": "9876543210"}, headers=owner).json()
+    atta = client.get("/api/products", params={"q": "Atta"}, headers=owner).json()[0]
+    url = f"/api/distributors/{d['id']}/quotes"
+    assert client.post(url, json=_quote(atta, unit_price=atta["mrp"] + 1), headers=owner).status_code == 400
+    assert client.post(url, json=_quote(atta, unit_price=0.5), headers=owner).status_code in (400, 422)
+    assert client.post(url, json=_quote(atta, valid_till="2000-01-01"), headers=owner).status_code == 400
+    assert client.post(url, json=_quote(atta), headers=other).status_code == 404
+    assert client.post(url, json=_quote(atta), headers=_login(client)).status_code == 404
+    assert client.post(url, json=_quote(atta), headers=owner).status_code == 201
+    assert client.post(url, json=_quote(atta, unit_price=round(atta["mrp"] * 0.7, 2)), headers=owner).status_code == 201
+    mine = [x for x in client.get("/api/distributors", headers=owner).json() if x["id"] == d["id"]][0]
+    assert len(mine["quotes"]) == 1  # the new quote replaced the old one
+
+
+def test_login_is_rate_limited_per_phone_even_for_unknown_numbers(client):
+    body = {"phone": "9000000099", "password": "wrong-pass"}  # no such account
+    for _ in range(5):
+        assert client.post("/api/auth/login", json=body).status_code == 401
+    r = client.post("/api/auth/login", json=body)
+    assert r.status_code == 429 and int(r.headers["Retry-After"]) > 0
+
+
+def test_good_login_resets_the_failure_count(client):
+    bad = {"phone": "9000000004", "password": "wrong-pass"}
+    for _ in range(3):
+        assert client.post("/api/auth/login", json=bad).status_code == 401
+    assert client.post("/api/auth/login", json={"phone": "9000000004", "password": "vistaar123"}).status_code == 200
+    for _ in range(3):  # 6 wrong tries in total, but the count restarted after the good login
+        assert client.post("/api/auth/login", json=bad).status_code == 401

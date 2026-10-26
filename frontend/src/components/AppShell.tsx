@@ -14,6 +14,7 @@ const NAV = [
   { href: "/pulse", label: "Pulse" },
   { href: "/prices", label: "Daam" },
   { href: "/map", label: "Mohalla" },
+  { href: "/distributors", label: "Distributor" },
   { href: "/impact", label: "Impact" },
 ];
 

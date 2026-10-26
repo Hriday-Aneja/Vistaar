@@ -17,15 +17,17 @@ router = APIRouter(prefix="/api/prices", tags=["price-radar"])
 @router.get("/radar")
 def radar(db: Session = Depends(get_db), user: User = Depends(current_user)):
     today = date.today()
+    world = user.shop.is_demo
     out = []
     for product in db.scalars(select(Product).order_by(Product.name)):
         rows = db.execute(
             select(DistributorQuote, Distributor).join(Distributor, DistributorQuote.distributor_id == Distributor.id)
-            .where(DistributorQuote.product_id == product.id, DistributorQuote.valid_till >= today)
+            .where(DistributorQuote.product_id == product.id, DistributorQuote.valid_till >= today,
+                   Distributor.is_demo == world)
         ).all()
         if not rows:
             continue
-        bench = benchmark(paid_price_history(db, product.id))
+        bench = benchmark(paid_price_history(db, product.id, demo=world))
         offers = {str(q.distributor_id): q.unit_price for q, _ in rows}
         floors = {str(q.distributor_id): round(q.unit_price * d.floor_ratio, 2) for q, d in rows}
         final, events = run_reverse_auction(offers, floors)

@@ -37,7 +37,8 @@ def cohort_node(state: OrderState) -> OrderState:
 
 def negotiate_node(state: OrderState) -> OrderState:
     with SessionLocal() as db:
-        chosen, events = bulk.negotiate(db, state["pooled_demand"], date.today())
+        demo = db.get(Shop, state["shop_id"]).is_demo  # real shops only negotiate with real distributors
+        chosen, events = bulk.negotiate(db, state["pooled_demand"], date.today(), demo=demo)
     return {"chosen": chosen, "auction_log": events, "status": "awaiting_approval"}
 
 

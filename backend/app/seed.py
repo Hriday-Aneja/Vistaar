@@ -136,11 +136,11 @@ def build():
 
     for kind, label, start, end, cats, action in EVENTS:
         db.add(m.EventCalendar(kind=kind, label=label, start_date=TODAY + timedelta(days=start),
-                               end_date=TODAY + timedelta(days=end), categories=cats, suggested_action=action))
+                               end_date=TODAY + timedelta(days=end), categories=cats, suggested_action=action, is_demo=True))
 
-    distributors = [m.Distributor(name="Agarwal Wholesale", phone="9100000001", floor_ratio=0.90),
-                    m.Distributor(name="Delhi Bulk Traders", phone="9100000002", floor_ratio=0.88),
-                    m.Distributor(name="Sai Distributors", phone="9100000003", floor_ratio=0.92)]
+    distributors = [m.Distributor(name="Agarwal Wholesale", phone="9100000001", floor_ratio=0.90, is_demo=True),
+                    m.Distributor(name="Delhi Bulk Traders", phone="9100000002", floor_ratio=0.88, is_demo=True),
+                    m.Distributor(name="Sai Distributors", phone="9100000003", floor_ratio=0.92, is_demo=True)]
     db.add_all(distributors)
     db.flush()
     # (price factor vs MRP, min qty, delivery days). min_qty is why pooling matters: a lone shop
