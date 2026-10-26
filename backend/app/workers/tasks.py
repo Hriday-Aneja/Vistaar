@@ -17,6 +17,11 @@ def monitor_pulse() -> int:
 
 
 @celery.task
-def monitor_sales() -> str:
-    """TODO: detect unusual sales drops per merchant and push an alert."""
-    return "ok"
+def monitor_sales() -> int:
+    """Daily: count shops whose sales have dropped (TODO: push notifications)."""
+    from app.db.models import Shop
+    from app.db.session import SessionLocal
+    from app.services.sales_drop import sales_drop_for
+
+    with SessionLocal() as db:
+        return sum(1 for s in db.scalars(select(Shop)) if sales_drop_for(db, s, date.today())["drop"])

@@ -6,6 +6,7 @@ import { api, session } from "@/lib/api";
 import { Loading } from "./ui";
 
 const NAV = [
+  { href: "/chat", label: "Chat" },
   { href: "/bulk", label: "Bulk-buy" },
   { href: "/stock", label: "Stock" },
   { href: "/swaps", label: "Swap" },
@@ -13,6 +14,7 @@ const NAV = [
   { href: "/pulse", label: "Pulse" },
   { href: "/prices", label: "Daam" },
   { href: "/map", label: "Mohalla" },
+  { href: "/impact", label: "Impact" },
 ];
 
 export default function AppShell({ children }: { children: ReactNode }) {

@@ -208,3 +208,15 @@ class AuditLog(Base):
     prev_hash: Mapped[str] = mapped_column(String(64))
     hash: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime)
+
+
+class PlanThread(Base):
+    """A bulk-buy plan waiting for the merchant's approval. Kept in the DB so a restart does not lose it."""
+    __tablename__ = "plan_threads"
+    thread_id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    shop_id: Mapped[int] = mapped_column(ForeignKey("shops.id"), index=True)
+    status: Mapped[str] = mapped_column(String(12), default="planned")  # planned | ordering | ordered
+    state: Mapped[dict] = mapped_column(JSON)  # needs_by_shop, chosen, auction_log, festival_multiplier
+    order_ids: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    audit_hash: Mapped[str] = mapped_column(String(64), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

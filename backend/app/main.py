@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import auth, health, khata, orders, prices, pulse, shops, stock, stream, swaps, udhaar
+from app.api import auth, health, impact, khata, orders, prices, pulse, shops, stock, stream, swaps, udhaar
 from app.config import get_settings
 from app.db import models  # noqa: F401  (registers tables)
 from app.db.session import Base, engine
@@ -26,5 +26,5 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-for module in (health, auth, shops, stock, orders, swaps, udhaar, khata, pulse, prices, stream):
+for module in (health, auth, shops, stock, orders, swaps, udhaar, khata, pulse, prices, impact, stream):
     app.include_router(module.router)

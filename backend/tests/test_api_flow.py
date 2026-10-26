@@ -63,3 +63,71 @@ def test_bulk_plan_requires_approval_then_orders(client):
     done = client.post(f"/api/orders/{plan['thread_id']}/approve", headers=h).json()
     assert done["status"] == "ordered" and done["order_ids"]
     assert client.get("/health").json()["audit_chain"]["ok"] is True
+
+
+def test_negotiation_stream_replays_auction(client, monkeypatch):
+    from starlette.websockets import WebSocketDisconnect
+
+    monkeypatch.setattr("app.api.stream.REPLAY_DELAY_S", 0)
+    h = _login(client)
+    plan = client.post("/api/orders/plan", headers=h).json()
+    token = h["Authorization"].split(" ")[1]
+    bids = []
+    with client.websocket_connect(f"/ws/negotiation/{plan['thread_id']}?token={token}") as ws:
+        while True:
+            msg = ws.receive_json()
+            if msg["event"] == "done":
+                break
+            if msg["event"] == "bid":
+                bids.append(msg)
+    assert len(bids) == len(plan["auction_log"])
+    with client.websocket_connect(f"/ws/negotiation/{plan['thread_id']}?token=bad") as ws:
+        with pytest.raises(WebSocketDisconnect):
+            ws.receive_json()
+
+
+def test_impact_numbers_and_labels(client):
+    h = _login(client)
+    plan = client.post("/api/orders/plan", headers=h).json()
+    client.post(f"/api/orders/{plan['thread_id']}/approve", headers=h)
+    r = client.get("/api/impact", headers=h).json()
+    assert r["simulated"] is True
+    assert r["bulk"]["orders"] >= 1 and "assumption" in r["bulk"]["basis"]
+    assert r["pool"]["shops"] >= 5
+    assert r["udhaar"]["recovered_total"] >= 0
+    assert client.get("/api/impact").status_code == 401
+
+
+def test_bulk_plan_explains_each_quantity(client):
+    plan = client.post("/api/orders/plan", headers=_login(client)).json()
+    mine = [ln for ln in plan["lines"] if ln["my_qty"] > 0]
+    assert mine and all(ln["reason"] and "aur chahiye" in ln["reason"] for ln in mine)
+    assert "not ML" in plan["forecast_method"]
+
+
+def test_sales_drop_alert_for_the_dropping_shop(client):
+    r = client.get("/api/pulse/drops", headers=_login(client, "9000000006")).json()
+    assert r["drop"] is not None and r["drop"]["drop_pct"] >= 40
+    assert "through" in client.get("/api/pulse/drops", headers=_login(client)).json()
+
+
+def test_pending_plan_survives_a_restart(client, monkeypatch):
+    from app.agents.graph import build_graph
+    from app.api import orders
+
+    h = _login(client)
+    plan = client.post("/api/orders/plan", headers=h).json()
+    monkeypatch.setattr(orders, "_graph", build_graph())  # fresh in-memory state, like a server restart
+    done = client.post(f"/api/orders/{plan['thread_id']}/approve", headers=h).json()
+    assert done["status"] == "ordered" and done["order_ids"]
+
+
+def test_approve_twice_returns_same_orders_and_only_owner_can_approve(client):
+    h = _login(client)
+    plan = client.post("/api/orders/plan", headers=h).json()
+    url = f"/api/orders/{plan['thread_id']}/approve"
+    assert client.post(url, headers=_login(client, "9000000002")).status_code == 404
+    first = client.post(url, headers=h).json()
+    again = client.post(url, headers=h).json()
+    assert first["order_ids"] == again["order_ids"] and again["status"] == "ordered"
+    assert client.post("/api/orders/unknown-thread/approve", headers=h).status_code == 404

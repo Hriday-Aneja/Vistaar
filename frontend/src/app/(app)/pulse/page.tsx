@@ -5,10 +5,19 @@ import { useLoad } from "@/lib/useLoad";
 
 export default function Pulse() {
   const { data, error, loading, reload } = useLoad(() => api<any>("/pulse"));
+  const drops = useLoad(() => api<any>("/pulse/drops"));
+  const drop = drops.data?.drop;
   return (
     <>
       <Head title="Mohalla Pulse" sub="Jab paas ki kai dukaanon me ek saath bikri badhe, to pehle se khabar." />
       <Async loading={loading} error={error} reload={reload}>
+        {drop ? (
+          <div className="section" style={{ border: "1px solid var(--line)", borderRadius: 8, background: "var(--surface)", padding: 16 }}>
+            <strong className="flag">Bikri gir rahi hai</strong>
+            <p>Pichhle {drop.recent_days} din roz ~{drop.recent} units bike, aam din ~{drop.baseline} ({drop.drop_pct}% kam).</p>
+            <p className="note">Pata karo: koi maal khatam to nahi hua, ya dukaan band to nahi rahi? Aaj ki bikri shamil nahi hai.</p>
+          </div>
+        ) : null}
         {data && data.alerts.length ? (
           <Table head={[{ label: "Maal" }, { label: "Dukaan", num: true }, { label: "Uchhaal", num: true }, { label: "Karan" }, { label: "Kya karein" }, { label: "Kyun?" }]}>
             {data.alerts.map((a: any) => (

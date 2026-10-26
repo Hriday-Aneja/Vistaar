@@ -1,20 +1,26 @@
-"""Mohalla Bulk-Buy API: plan (runs the LangGraph pipeline up to the approval gate) -> approve -> PO pdf."""
+"""Mohalla Bulk-Buy API: plan (runs the LangGraph pipeline up to the approval gate) -> approve -> PO pdf.
+
+A plan is saved in the DB (PlanThread). Approve places the orders from that saved plan, so a pending plan
+survives a server restart and cannot be approved twice."""
 from datetime import date
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
+from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from app.agents.graph import build_graph
-from app.db.models import Distributor, Product, PurchaseOrder, Shop, User
+from app.db.models import Distributor, PlanThread, Product, PurchaseOrder, Shop, User
 from app.db.session import get_db
 from app.deps import current_user
-from app.tuning import SOLO_PRICE_RATIO
+from app.services import bulk
+from app.services.inventory import daily_rate, stock_on_hand
+from app.services.reasons import FORECAST_METHOD, explain_need
+from app.tuning import BULK_HORIZON_DAYS, SOLO_PRICE_RATIO
 
 router = APIRouter(prefix="/api/orders", tags=["bulk-buy"])
-_graph = build_graph()  # in-memory checkpointer; swap for Redis/Postgres later
-_thread_owner: dict[str, int] = {}  # thread_id -> shop_id (who may approve)
+_graph = build_graph()  # in-memory checkpointer: only used while planning, the saved plan lives in the DB
 
 
 def _cfg(thread_id: str) -> dict:
@@ -22,14 +28,22 @@ def _cfg(thread_id: str) -> dict:
 
 
 @router.post("/plan")
-def plan(user: User = Depends(current_user)) -> dict:
+def plan(db: Session = Depends(get_db), user: User = Depends(current_user)) -> dict:
     thread_id = uuid4().hex
-    _thread_owner[thread_id] = user.shop_id
     state = _graph.invoke({"shop_id": user.shop_id}, _cfg(thread_id))
+    db.add(PlanThread(thread_id=thread_id, shop_id=user.shop_id, status="planned", state={
+        "needs_by_shop": state["needs_by_shop"], "chosen": state["chosen"],
+        "auction_log": state["auction_log"], "festival_multiplier": state["festival_multiplier"]}))
+    db.commit()
     lines = []
     for c in state["chosen"]:
         mine = state["needs_by_shop"].get(user.shop_id, {}).get(c["product_id"], 0)
-        lines.append({**c, "my_qty": mine,
+        reason = None
+        if mine > 0:
+            reason = explain_need(daily_rate(db, user.shop_id, c["product_id"], date.today()),
+                                  stock_on_hand(db, user.shop_id, c["product_id"]),
+                                  BULK_HORIZON_DAYS, state["festival_multiplier"], mine)
+        lines.append({**c, "my_qty": mine, "reason": reason,
                       "my_saving": round(mine * (c["solo_price_estimate"] - c["unit_price"]), 2)})
     return {
         "thread_id": thread_id,
@@ -39,16 +53,36 @@ def plan(user: User = Depends(current_user)) -> dict:
         "lines": lines,
         "auction_log": state["auction_log"],
         "savings_estimate": round(sum(line["my_saving"] for line in lines), 2),
+        "forecast_method": FORECAST_METHOD,
         "savings_basis": f"vs a lone kirana paying ~{SOLO_PRICE_RATIO * 100:.0f}% of MRP (assumption)",
     }
 
 
 @router.post("/{thread_id}/approve")
-def approve(thread_id: str, user: User = Depends(current_user)) -> dict:
-    if _thread_owner.get(thread_id) != user.shop_id:
+def approve(thread_id: str, db: Session = Depends(get_db), user: User = Depends(current_user)) -> dict:
+    row = db.get(PlanThread, thread_id)
+    if row is None or row.shop_id != user.shop_id:
         raise HTTPException(404, "Plan nahi mila")
-    state = _graph.invoke(None, _cfg(thread_id))  # resume past the approval gate
-    return {"status": state["status"], "order_ids": state["order_ids"], "audit_hash": state["audit_hash"]}
+    if row.status == "ordered":  # approving twice returns the same orders instead of ordering again
+        return {"status": "ordered", "order_ids": row.order_ids, "audit_hash": row.audit_hash}
+
+    claimed = db.execute(update(PlanThread).where(PlanThread.thread_id == thread_id, PlanThread.status == "planned")
+                         .values(status="ordering")).rowcount
+    db.commit()
+    if claimed != 1:
+        raise HTTPException(409, "Ye plan abhi process ho raha hai")
+    try:
+        needs = {int(sid): {int(pid): qty for pid, qty in items.items()}
+                 for sid, items in row.state["needs_by_shop"].items()}
+        order_ids, audit_hash = bulk.place_orders(db, needs, row.state["chosen"], thread_id=thread_id)
+    except Exception:
+        db.rollback()
+        db.execute(update(PlanThread).where(PlanThread.thread_id == thread_id).values(status="planned"))
+        db.commit()
+        raise
+    row.status, row.order_ids, row.audit_hash = "ordered", order_ids, audit_hash
+    db.commit()
+    return {"status": "ordered", "order_ids": order_ids, "audit_hash": audit_hash}
 
 
 @router.get("/{order_id}/po.pdf")
