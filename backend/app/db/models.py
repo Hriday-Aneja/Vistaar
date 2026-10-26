@@ -208,3 +208,14 @@ class AuditLog(Base):
     prev_hash: Mapped[str] = mapped_column(String(64))
     hash: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime)
+
+class OrderPlan(Base):
+    __tablename__ = "order_plans"
+
+    thread_id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    shop_id: Mapped[int] = mapped_column(ForeignKey("shops.id"), index=True)
+    status: Mapped[str] = mapped_column(
+        String(30),
+        default="awaiting_approval",
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
