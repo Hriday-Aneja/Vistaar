@@ -76,7 +76,7 @@ def add_quote(distributor_id: int, body: QuoteIn, db: Session = Depends(get_db),
     if d is None or d.is_demo != shop.is_demo:
         raise HTTPException(404, "Distributor nahi mila")
     if d.added_by_shop_id != shop.id:
-        raise HTTPException(403, "Quote wahi daal sakta hai jisne distributor joda hai")
+        raise HTTPException(404, "Quote wahi daal sakta hai jisne distributor joda hai")
     product = db.get(Product, body.product_id)
     if product is None:
         raise HTTPException(404, "Product nahi mila")
