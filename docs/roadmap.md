@@ -23,7 +23,7 @@
 1. [ ] Run `docker compose up --build` end to end; fix whatever breaks (the DB-backed paths and the frontend were not executed when this was merged)
 2. [ ] Run the API tests (`tests/test_api_flow.py`) and fix what fails
 3. [ ] Live auction events over Redis Pub/Sub instead of replaying a saved log
-4. [ ] XGBoost forecast + SHAP reasons instead of the rule-based ones
+4. [x] XGBoost forecast + SHAP reasons in the bulk plan (`services/ml_forecast.py`); the rule-based forecast stays as the fallback
 5. [ ] PostGIS `ST_DWithin` for cohorts instead of Python haversine
 6. [ ] Real event/weather source for Pulse; shelf-photo stock count (YOLOv8)
 7. [ ] Sarvam voice; real WhatsApp sending; send the PO to the distributor

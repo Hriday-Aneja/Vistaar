@@ -29,3 +29,11 @@ LOGIN_MAX_FAILURES_PER_IP = int(os.getenv("VISTAAR_LOGIN_MAX_FAILURES_PER_IP", "
 LOGIN_WINDOW_S = int(os.getenv("VISTAAR_LOGIN_WINDOW_S", "900"))
 REGISTER_MAX_PER_IP = int(os.getenv("VISTAAR_REGISTER_MAX_PER_IP", "20"))
 REGISTER_WINDOW_S = int(os.getenv("VISTAAR_REGISTER_WINDOW_S", "3600"))
+
+# ML forecast (services/ml_forecast.py). The model only suggests; shop_needs clamps it to this band around the
+# rule-based horizon demand and still subtracts stock on hand.
+ML_FORECAST_ENABLED = _flag("VISTAAR_ML_FORECAST", "1")
+ML_MIN_HISTORY_DAYS = int(os.getenv("VISTAAR_ML_MIN_HISTORY", "30"))
+ML_MIN_RATIO = 0.4
+ML_MAX_RATIO = 2.5
+ML_SEED = 42
