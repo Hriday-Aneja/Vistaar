@@ -1,0 +1,7 @@
+# Install when you start the real forecasting model:
+#   pip install -r requirements-ml.txt
+numpy
+pandas
+xgboost
+shap
+scikit-learn

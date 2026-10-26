@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <style>
+    body { font-family: sans-serif; padding: 32px; color: #1a1a1a; }
+    h1 { font-size: 20px; margin-bottom: 4px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+    th, td { text-align: left; padding: 8px; border-bottom: 1px solid #ddd; }
+    td.n, th.n { text-align: right; }
+    .meta { color: #555; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <h1>Purchase Order #{{ order.order_id }}</h1>
+  <div class="meta">Distributor: {{ order.distributor }} | Shop: {{ order.shop }} | Pooled with {{ order.cohort_size }} shops</div>
+  <table>
+    <tr><th>Item</th><th class="n">Qty</th><th class="n">Unit price (Rs)</th><th class="n">Amount (Rs)</th></tr>
+    {% for line in order.lines %}
+    <tr>
+      <td>{{ line.product }}</td><td class="n">{{ line.qty }}</td>
+      <td class="n">{{ "%.2f"|format(line.unit_price) }}</td><td class="n">{{ "%.2f"|format(line.amount) }}</td>
+    </tr>
+    {% endfor %}
+    <tr><th>Total</th><th></th><th></th><th class="n">{{ "%.2f"|format(order.total) }}</th></tr>
+  </table>
+  <p class="meta">Audit hash: {{ order.audit_hash }}</p>
+</body>
+</html>

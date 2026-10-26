@@ -1,0 +1,69 @@
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_USER: vistaar
+      POSTGRES_PASSWORD: vistaar
+      POSTGRES_DB: vistaar
+    ports: ["5432:5432"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./infra/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vistaar"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+
+  backend:
+    build: ./backend
+    env_file: .env
+    ports: ["8000:8000"]
+    volumes: ["./backend:/app"]
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    depends_on:
+      db: { condition: service_healthy }
+      redis: { condition: service_started }
+
+  worker:
+    build: ./backend
+    env_file: .env
+    volumes: ["./backend:/app"]
+    command: celery -A app.workers.celery_app.celery worker --loglevel=info
+    depends_on: [redis, db]
+
+  beat:
+    build: ./backend
+    env_file: .env
+    volumes: ["./backend:/app"]
+    command: celery -A app.workers.celery_app.celery beat --loglevel=info
+    depends_on: [redis]
+
+  frontend:
+    build: ./frontend
+    env_file: .env
+    ports: ["3000:3000"]
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on: [backend]
+
+  # Optional, add later: docker compose --profile full up
+  neo4j:
+    profiles: ["full"]
+    image: neo4j:5
+    environment:
+      NEO4J_AUTH: neo4j/vistaar-dev
+    ports: ["7474:7474", "7687:7687"]
+
+  qdrant:
+    profiles: ["full"]
+    image: qdrant/qdrant:latest
+    ports: ["6333:6333"]
+
+volumes:
+  pgdata:
