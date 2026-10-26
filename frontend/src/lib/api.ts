@@ -1,6 +1,12 @@
 const BASE = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000") + "/api";
 const KEY = "vistaar_token";
 
+/** ws:// or wss:// URL for a backend WebSocket path, with the session token. */
+export function wsUrl(path: string): string {
+  const base = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000").replace(/^http/, "ws");
+  return `${base}${path}?token=${encodeURIComponent(typeof window === "undefined" ? "" : localStorage.getItem(KEY) ?? "")}`;
+}
+
 export const session = {
   get token(): string | null {
     return typeof window === "undefined" ? null : localStorage.getItem(KEY);

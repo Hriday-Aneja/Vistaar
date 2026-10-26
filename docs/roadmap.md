@@ -13,6 +13,7 @@
 - [x] Rule-based reasons for each bulk quantity (not ML)
 - [x] Impact screen and `/api/impact`, with simulation labels
 - [x] Sales-drop alert (API, Pulse page card, daily Celery task) with a seeded demo shop
+- [x] Live Pulse and sales-drop alerts over Redis Pub/Sub (`alerts:{shop_id}`, `/ws/alerts`, toast and card on the Pulse page, 30 s polling when Redis is down); the auction replay is unchanged
 - [x] Hinglish chat page (keyword routing, no LLM)
 - [x] `make reset-demo`
 - [x] Name matching accepts nickname objects (fix)

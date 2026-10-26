@@ -37,3 +37,6 @@ ML_MIN_HISTORY_DAYS = int(os.getenv("VISTAAR_ML_MIN_HISTORY", "30"))
 ML_MIN_RATIO = 0.4
 ML_MAX_RATIO = 2.5
 ML_SEED = 42
+
+# Live alerts over Redis Pub/Sub (services/alert_bus.py). Off = nothing is published; the frontend polls instead.
+ALERTS_REDIS_ENABLED = _flag("VISTAAR_ALERTS_REDIS", "1")

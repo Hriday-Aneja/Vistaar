@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app import tuning
 from app.api import (
+    alerts,
     auth,
     distributors,
     health,
@@ -70,6 +71,7 @@ for module in (
     impact,
     distributors,
     stream,
+    alerts,
 ):
     app.include_router(module.router)
 
