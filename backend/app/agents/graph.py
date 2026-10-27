@@ -1,4 +1,3 @@
-
 """Vistaar bulk-buy pipeline (LangGraph).
 
 forecast -> cohort -> negotiate -> [merchant approval] -> place_order
@@ -6,6 +5,7 @@ forecast -> cohort -> negotiate -> [merchant approval] -> place_order
 
 from datetime import date
 from langchain_core.runnables import RunnableConfig
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 
 from app.agents.state import OrderState
@@ -82,6 +82,10 @@ def place_order_node(
 
 
 def build_graph(checkpointer=None):
+    """The approval gate (interrupt_before) needs a checkpointer, so default to an in-memory one.
+    The saved plan that survives a restart lives in the plan_threads table, not here."""
+    if checkpointer is None:
+        checkpointer = MemorySaver()
     graph = StateGraph(OrderState)
     graph.add_node("forecast", forecast_node)
     graph.add_node("cohort", cohort_node)
