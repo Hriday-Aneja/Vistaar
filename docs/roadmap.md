@@ -7,13 +7,15 @@
 - [x] Udhaar Trust Network, name matching, khata reminder drafts
 - [x] Mohalla Pulse (z-score + demo event calendar)
 - [x] Fair-Price Radar (benchmark, flags, reverse auction)
-- [x] Privacy layer, LLM fallback router (written, not used by any feature yet), unit tests for all pure logic
+- [x] Privacy layer, LLM fallback router (Gemini -> Groq -> offline, 5 s timeout, logs the provider; used by chat intent and khata reminder wording), unit tests for all pure logic
 - [x] Bulk plan saved in the DB (survives a restart, cannot be approved twice, only the owner can approve)
 - [x] Live auction panel: `/ws/negotiation/{thread_id}` replays the saved auction log (not Redis yet)
 - [x] Rule-based reasons for each bulk quantity (not ML)
 - [x] Impact screen and `/api/impact`, with simulation labels
 - [x] Sales-drop alert (API, Pulse page card, daily Celery task) with a seeded demo shop
-- [x] Hinglish chat page (keyword routing, no LLM)
+- [x] Live Pulse and sales-drop alerts over Redis Pub/Sub (`alerts:{shop_id}`, `/ws/alerts`, toast and card on the Pulse page, 30 s polling when Redis is down); the auction replay is unchanged
+- [x] Hinglish chat page: `POST /api/chat/intent` (LLM picks a fixed intent, strict validation, keyword routing as fallback)
+- [x] Khata reminder drafts worded by the LLM (validated: only our amount and name, no phone numbers sent, template fallback; still a draft until the merchant sends)
 - [x] `make reset-demo`
 - [x] Name matching accepts nickname objects (fix)
 - [x] Real and demo data separated for distributors, quotes, price history and the event calendar; owner-entered distributors and quotes
@@ -23,7 +25,7 @@
 1. [ ] Run `docker compose up --build` end to end; fix whatever breaks (the DB-backed paths and the frontend were not executed when this was merged)
 2. [ ] Run the API tests (`tests/test_api_flow.py`) and fix what fails
 3. [ ] Live auction events over Redis Pub/Sub instead of replaying a saved log
-4. [ ] XGBoost forecast + SHAP reasons instead of the rule-based ones
+4. [x] XGBoost forecast + SHAP reasons in the bulk plan (`services/ml_forecast.py`); the rule-based forecast stays as the fallback
 5. [ ] PostGIS `ST_DWithin` for cohorts instead of Python haversine
 6. [ ] Real event/weather source for Pulse; shelf-photo stock count (YOLOv8)
 7. [ ] Sarvam voice; real WhatsApp sending; send the PO to the distributor

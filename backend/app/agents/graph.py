@@ -31,12 +31,11 @@ def cohort_node(state: OrderState) -> OrderState:
     mult = state["festival_multiplier"]
     with SessionLocal() as db:
         cohort = bulk.build_cohort(db, db.get(Shop, state["shop_id"]))
-        needs_by_shop = {
-            shop.id: bulk.shop_needs(db, shop.id, date.today(), mult)
-            for shop in cohort
-        }
+        results = {shop.id: bulk.shop_needs_with_method(db, shop.id, date.today(), mult) for shop in cohort}
+    needs_by_shop = {sid: needs for sid, (needs, _) in results.items()}
     pooled = bulk.pooled_demand(needs_by_shop)
     return {
+        "forecast_methods": {sid: method for sid, (_, method) in results.items()},
         "cohort_ids": [shop.id for shop in cohort],
         "needs_by_shop": needs_by_shop,
         "pooled_demand": pooled,

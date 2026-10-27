@@ -11,3 +11,8 @@ httpx>=0.27
 jinja2>=3.1
 weasyprint>=61
 python-jose[cryptography]>=3.3
+# ML forecast (services/ml_forecast.py). Pinned to versions that install on Python 3.11 (Docker/CI image):
+# xgboost 3.3+ and numpy 2.5+ need Python 3.12.
+xgboost==3.2.0
+shap==0.51.0
+numpy==2.4.6

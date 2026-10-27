@@ -1,15 +1,40 @@
 "use client";
+import { useState } from "react";
 import { Async, Badge, Empty, Head, Table } from "@/components/ui";
 import { api } from "@/lib/api";
+import { toast } from "@/lib/toast";
+import { LiveAlert, useLiveAlerts } from "@/lib/useLiveAlerts";
 import { useLoad } from "@/lib/useLoad";
 
 export default function Pulse() {
-  const { data, error, loading, reload } = useLoad(() => api<any>("/pulse"));
+  const { data, error, loading, reload, refresh } = useLoad(() => api<any>("/pulse"));
   const drops = useLoad(() => api<any>("/pulse/drops"));
   const drop = drops.data?.drop;
+  const [live, setLive] = useState<LiveAlert[]>([]);
+  const refreshAll = () => { refresh(); drops.refresh(); };
+  // Pushed alerts show as a toast and a card. If the socket is not available we poll the same APIs every 30 s.
+  const { mode } = useLiveAlerts((a) => {
+    setLive((prev) => [a, ...prev].slice(0, 5));
+    toast(a.title);
+    refreshAll();
+  }, refreshAll);
   return (
     <>
       <Head title="Mohalla Pulse" sub="Jab paas ki kai dukaanon me ek saath bikri badhe, to pehle se khabar." />
+      {mode !== "connecting" ? (
+        <p className="note" aria-live="polite">
+          {mode === "live" ? "Live alerts chalu hain." : "Live connection nahi mila, har 30 second me khud check kar rahe hain."}
+        </p>
+      ) : null}
+      {live.map((a) => (
+        <div key={(a.id ?? "drop") + a.created_at} className="section" role="status"
+             style={{ border: "1px solid var(--line)", borderRadius: 8, background: "var(--surface)", padding: 16 }}>
+          <strong className={a.kind === "sales_drop" ? "flag" : undefined}>{a.title}</strong>{" "}
+          <span className="sub">abhi abhi, {new Date(a.created_at).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}</span>
+          <p>{a.action}</p>
+          <div className="sub">{a.why}</div>
+        </div>
+      ))}
       <Async loading={loading} error={error} reload={reload}>
         {drop ? (
           <div className="section" style={{ border: "1px solid var(--line)", borderRadius: 8, background: "var(--surface)", padding: 16 }}>

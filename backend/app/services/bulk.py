@@ -10,25 +10,43 @@ from app.config import get_settings
 from app.db.models import Distributor, DistributorQuote, Product, PurchaseOrder, Shop, utcnow
 from app.services.audit_db import append_audit
 from app.services.geo import nearby
+from app.services import ml_forecast
 from app.services.inventory import daily_rate, stock_on_hand
 from app.services.price_radar import benchmark, flag_quote, run_reverse_auction
 from app.services.pricing_rules import Quote, best_quote
 from app.services.privacy import pool_demand
 from app.services.worlds import same_world
-from app.tuning import BULK_HORIZON_DAYS, NEARBY_RADIUS_KM, SOLO_PRICE_RATIO
+from app.tuning import BULK_HORIZON_DAYS, ML_MAX_RATIO, ML_MIN_RATIO, NEARBY_RADIUS_KM, SOLO_PRICE_RATIO
 
 
-def shop_needs(db: Session, shop_id: int, today: date, multiplier: float = 1.0) -> dict[int, int]:
-    """product_id -> units to buy so stock lasts BULK_HORIZON_DAYS (x festival multiplier)."""
+def shop_needs_with_method(db: Session, shop_id: int, today: date,
+                           multiplier: float = 1.0) -> tuple[dict[int, int], str]:
+    """product_id -> units to buy so stock lasts BULK_HORIZON_DAYS, plus the forecast method that was used.
+
+    Rule-based: average daily sales x horizon x festival multiplier. When the XGBoost forecast is available the
+    model only suggests the horizon demand (it already sees festivals, so the flat multiplier is not applied) and
+    the suggestion is clamped to a band around the rule-based demand. Either way the same code rules follow:
+    stock on hand is subtracted and only need > 0 is kept.
+    """
+    ml = ml_forecast.forecast_units(db, shop_id, today, BULK_HORIZON_DAYS)
     needs: dict[int, int] = {}
     for product in db.scalars(select(Product)):
         rate = daily_rate(db, shop_id, product.id, today)
         if rate <= 0:
             continue
-        need = ceil(rate * BULK_HORIZON_DAYS * multiplier - stock_on_hand(db, shop_id, product.id))
+        if ml is not None and product.id in ml:
+            plain = rate * BULK_HORIZON_DAYS
+            demand = min(max(ml[product.id], ML_MIN_RATIO * plain), ML_MAX_RATIO * plain)
+        else:
+            demand = rate * BULK_HORIZON_DAYS * multiplier
+        need = ceil(demand - stock_on_hand(db, shop_id, product.id))
         if need > 0:
             needs[product.id] = need
-    return needs
+    return needs, (ml_forecast.ML_METHOD if ml is not None else "rule-based")
+
+
+def shop_needs(db: Session, shop_id: int, today: date, multiplier: float = 1.0) -> dict[int, int]:
+    return shop_needs_with_method(db, shop_id, today, multiplier)[0]
 
 
 def build_cohort(db: Session, shop: Shop) -> list[Shop]:

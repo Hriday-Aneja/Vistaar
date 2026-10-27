@@ -13,6 +13,11 @@ export function useLoad<T>(fn: () => Promise<T>) {
       .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  // Same fetch without the loading state, so a background refresh does not blank the screen. Keeps the old data on error.
+  const refresh = useCallback(() => {
+    fn().then((d) => { setData(d); setError(null); }).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   useEffect(reload, [reload]);
-  return { data, error, loading, reload };
+  return { data, error, loading, reload, refresh };
 }

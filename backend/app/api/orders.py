@@ -14,7 +14,7 @@ from app.agents.graph import build_graph
 from app.db.models import Distributor, PlanThread, Product, PurchaseOrder, Shop, User
 from app.db.session import get_db
 from app.deps import current_user
-from app.services import bulk
+from app.services import bulk, ml_forecast
 from app.services.inventory import daily_rate, stock_on_hand
 from app.services.reasons import FORECAST_METHOD, explain_need
 from app.tuning import BULK_HORIZON_DAYS, SOLO_PRICE_RATIO
@@ -35,11 +35,14 @@ def plan(db: Session = Depends(get_db), user: User = Depends(current_user)) -> d
         "needs_by_shop": state["needs_by_shop"], "chosen": state["chosen"],
         "auction_log": state["auction_log"], "festival_multiplier": state["festival_multiplier"]}))
     db.commit()
+    method = state.get("forecast_methods", {}).get(user.shop_id, "rule-based")
     lines = []
     for c in state["chosen"]:
         mine = state["needs_by_shop"].get(user.shop_id, {}).get(c["product_id"], 0)
         reason = None
-        if mine > 0:
+        if mine > 0 and method == ml_forecast.ML_METHOD:
+            reason = ml_forecast.explain_reason(db, user.shop_id, c["product_id"], date.today(), BULK_HORIZON_DAYS)
+        if mine > 0 and reason is None:
             reason = explain_need(daily_rate(db, user.shop_id, c["product_id"], date.today()),
                                   stock_on_hand(db, user.shop_id, c["product_id"]),
                                   BULK_HORIZON_DAYS, state["festival_multiplier"], mine)
@@ -53,7 +56,9 @@ def plan(db: Session = Depends(get_db), user: User = Depends(current_user)) -> d
         "lines": lines,
         "auction_log": state["auction_log"],
         "savings_estimate": round(sum(line["my_saving"] for line in lines), 2),
-        "forecast_method": FORECAST_METHOD,
+        # xgboost+shap, or the existing rule-based label (it starts with "rule-based")
+        "forecast_method": ml_forecast.ML_METHOD if method == ml_forecast.ML_METHOD else FORECAST_METHOD,
+        "forecast_engine": method,
         "savings_basis": f"vs a lone kirana paying ~{SOLO_PRICE_RATIO * 100:.0f}% of MRP (assumption)",
     }
 
