@@ -76,6 +76,11 @@ def add_quote(distributor_id: int, body: QuoteIn, db: Session = Depends(get_db),
     # 404 for both "missing" and "someone else's": do not reveal that another shop's distributor exists
     if d is None or d.is_demo != shop.is_demo or d.added_by_shop_id != shop.id:
         raise HTTPException(404, "Distributor nahi mila")
+<<<<<<< HEAD
+=======
+    if d.added_by_shop_id != shop.id:
+        raise HTTPException(404, "Quote wahi daal sakta hai jisne distributor joda hai")
+>>>>>>> 18e22e0c67beded7da103881f66cae4b1c9c9a71
     product = db.get(Product, body.product_id)
     if product is None:
         raise HTTPException(404, "Product nahi mila")

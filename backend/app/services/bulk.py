@@ -101,6 +101,32 @@ def place_orders(db: Session, shop_needs_by_shop: dict[int, dict[int, int]], cho
     by_dist: dict[int, list[dict]] = {}
     for c in chosen:
         by_dist.setdefault(c["distributor_id"], []).append(c)
+            # Prevent duplicate orders for the same plan and distributor.
+    from sqlalchemy import select
+
+    existing_orders = db.scalars(
+        select(PurchaseOrder).where(
+            PurchaseOrder.thread_id == thread_id
+        )
+    ).all()
+
+    if existing_orders:
+        existing_distributors = {
+            order.distributor_id for order in existing_orders
+        }
+
+        expected_distributors = set(by_dist.keys())
+
+        if existing_distributors == expected_distributors:
+            return (
+                [order.id for order in existing_orders],
+                existing_orders[-1].audit_hash,
+            )
+
+        raise ValueError(
+            f"Partial orders already exist for plan {thread_id}. "
+            "Refusing to create duplicate purchase orders."
+        )
     order_ids, last_hash = [], ""
     for dist_id, items in by_dist.items():
         lines = [{"product_id": c["product_id"], "shop_id": sid, "qty": needs[c["product_id"]],
