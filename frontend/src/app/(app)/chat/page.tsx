@@ -129,25 +129,33 @@ export default function Chat() {
     } catch (e: any) { push("bot", e.message); }
   }
 
+  // The backend decides which feature the message is about (LLM first, keyword rules as the fallback).
+  // Every feature below is still its own API call; the model never decides quantities, prices or approvals.
   async function route(q: string) {
-    const t = q.toLowerCase();
-    if (/udhaar|khata|credit|baaki/.test(t)) {
-      const r = await api("/udhaar/resolve?q=" + encodeURIComponent(q));
-      if (r.status === "resolved") return showCustomer(r.matches[0].id);
-      if (r.status === "ambiguous") return push("bot", <PickBubble q={r.question} matches={r.matches} onPick={showCustomer} />);
-      return push("bot", "Is naam ka koi customer aapke khate me nahi mila. Udhaar page par pehle customer jodo.");
+    const { intent, entities } = await api<{ intent: string; entities: { customer_name?: string } }>(
+      "/chat/intent", { method: "POST", body: { text: q } });
+    switch (intent) {
+      case "udhaar_check": {
+        const r = await api("/udhaar/resolve?q=" + encodeURIComponent(entities.customer_name || q));
+        if (r.status === "resolved") return showCustomer(r.matches[0].id);
+        if (r.status === "ambiguous") return push("bot", <PickBubble q={r.question} matches={r.matches} onPick={showCustomer} />);
+        return push("bot", "Is naam ka koi customer aapke khate me nahi mila. Udhaar page par pehle customer jodo.");
+      }
+      case "swap":
+        return push("bot", <SwapBubble s={await api("/swaps/suggestions")} />);
+      case "plan_order":
+        return push("bot", <PlanBubble plan={await api("/orders/plan", { method: "POST" })} />);
+      case "pulse": {
+        const [pulse, drops] = await Promise.all([api("/pulse"), api("/pulse/drops")]);
+        return push("bot", <PulseBubble pulse={pulse} drops={drops} />);
+      }
+      case "price_check":
+        return push("bot", <p>Distributor ke daam aur unka fair-price check <Link href="/prices">Prices page</Link> par dikhta hai.</p>);
+      case "stock":
+        return push("bot", <p>Abhi ka stock aur expiry <Link href="/stock">Stock page</Link> par dikhta hai.</p>);
+      default:
+        return push("bot", "Ye abhi samajh nahi aaya. Maal plan, udhaar risk, expiry swap ya bikri ke baare me poochho.");
     }
-    if (/expire|swap|bachna|bekar|dead/.test(t)) {
-      return push("bot", <SwapBubble s={await api("/swaps/suggestions")} />);
-    }
-    if (/maal|order|plan|diwali|kharid|bulk|stock/.test(t)) {
-      return push("bot", <PlanBubble plan={await api("/orders/plan", { method: "POST" })} />);
-    }
-    if (/bikri|sales|pulse|spike|gir/.test(t)) {
-      const [pulse, drops] = await Promise.all([api("/pulse"), api("/pulse/drops")]);
-      return push("bot", <PulseBubble pulse={pulse} drops={drops} />);
-    }
-    push("bot", "Ye abhi samajh nahi aaya. Maal plan, udhaar risk, expiry swap ya bikri ke baare me poochho.");
   }
 
   async function ask(q: string) {

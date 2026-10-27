@@ -40,3 +40,7 @@ ML_SEED = 42
 
 # Live alerts over Redis Pub/Sub (services/alert_bus.py). Off = nothing is published; the frontend polls instead.
 ALERTS_REDIS_ENABLED = _flag("VISTAAR_ALERTS_REDIS", "1")
+
+# LLM router use (services/llm.py). The LLM only classifies chat messages and words khata reminder drafts.
+LLM_TIMEOUT_S = float(os.getenv("VISTAAR_LLM_TIMEOUT", "5"))
+LLM_INTENT_PER_MIN = int(os.getenv("VISTAAR_LLM_INTENT_PER_MIN", "20"))  # per user; above this the keyword router answers
