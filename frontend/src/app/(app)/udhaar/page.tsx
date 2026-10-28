@@ -7,6 +7,13 @@ import { useLoad } from "@/lib/useLoad";
 
 const RISK: Record<string, string> = { Low: "Kam risk", Medium: "Thoda risk", High: "Zyada risk" };
 
+// YYYY-MM-DD in the shop's local time, for the date input (the server allows today back to 60 days ago)
+const isoDay = (daysAgo = 0) => {
+  const d = new Date();
+  d.setDate(d.getDate() - daysAgo);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+
 function Network({ n }: { n: any }) {
   if (n.status !== "ok") {
     return <div><Badge kind="none">Data kam hai</Badge><p className="sub">{n.message}</p></div>;
@@ -30,16 +37,19 @@ function CustomerCard({ id, onChange }: { id: number; onChange: () => void }) {
   const { data, error, loading, reload } = useLoad(() => api<any>("/udhaar/customers/" + id));
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
+  const [day, setDay] = useState(isoDay());
 
   async function send(kind: "credit" | "payment") {
     const value = Number(amount);
     if (!value) return toast("Rupaye daalo", true);
     const room = data.network.room_left;
     if (kind === "credit" && room !== null && value > room && !confirm("Ye suggested limit se zyada hai. Phir bhi likhna hai?")) return;
+    const body: any = { customer_id: id, kind, amount: value, note: note || null };
+    if (day && day !== isoDay()) body.entry_date = day; // today = no date, the server uses today
     try {
-      await api("/udhaar/entries", { method: "POST", body: { customer_id: id, kind, amount: value, note: note || null } });
+      await api("/udhaar/entries", { method: "POST", body });
       toast(kind === "credit" ? "Udhaar likh liya" : "Payment likh li");
-      setAmount(""); setNote(""); reload(); onChange();
+      setAmount(""); setNote(""); setDay(isoDay()); reload(); onChange();
     } catch (e: any) { toast(e.message, true); }
   }
 
@@ -63,6 +73,7 @@ function CustomerCard({ id, onChange }: { id: number; onChange: () => void }) {
             <div className="form-grid">
               <Field label="Kitne rupaye"><input type="number" min={1} step="1" inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value)} /></Field>
               <Field label="Note"><input maxLength={200} placeholder="Optional" value={note} onChange={(e) => setNote(e.target.value)} /></Field>
+              <Field label="Kis din ki entry"><input type="date" value={day} min={isoDay(60)} max={isoDay()} onChange={(e) => setDay(e.target.value)} /></Field>
             </div>
             <div className="row">
               <button className="btn" onClick={() => send("credit")}>Udhaar diya</button>

@@ -58,7 +58,8 @@ def impact(db: Session = Depends(get_db), user: User = Depends(current_user)) ->
         "bulk": {"orders": orders, "spent": round(spent, 2), "saved_estimate": round(max(saved, 0.0), 2),
                  "basis": f"vs a lone kirana paying ~{SOLO_PRICE_RATIO * 100:.0f}% of MRP (assumption)"},
         "pool": {"shops": shops_pooled, "radius_km": NEARBY_RADIUS_KM,
-                 "basis": "nearby shops assumed to have joined the pool (demo)"},
+                 "basis": ("nearby shops assumed to have joined the pool (demo)" if me.is_demo
+                           else "registered Vistaar shops within this radius")},
         "udhaar": {"recovered_total": round(recovered_all, 2), "recovered_recent": round(recovered_recent, 2),
                    "recent_days": RECENT_DAYS, "pending": round(pending, 2)},
         "swaps": {"units_moved_out": moved_units, "value_moved_out": round(moved_value, 2),

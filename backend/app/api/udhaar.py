@@ -11,6 +11,7 @@ from app.deps import current_user
 from app.db.models import Customer, CustomerAlias, KhataEntry, User
 from app.schemas import _check_phone
 from app.security import phone_hash
+from app.services.backdate import check_backdate
 from app.services.name_matching import match_customers, suggested_name
 from app.services.trust import network_view, shop_stats
 
@@ -45,6 +46,7 @@ class EntryIn(BaseModel):
     kind: str = Field(pattern="^(credit|payment)$")
     amount: float = Field(gt=0, le=1000000)
     note: Optional[str] = Field(default=None, max_length=200)
+    entry_date: Optional[date] = None  # backdated entry; omitted = today (checked in add_entry)
 
 
 def _own_customer(db: Session, user: User, customer_id: int) -> Customer:
@@ -118,12 +120,20 @@ def customer_detail(customer_id: int, db: Session = Depends(get_db), user: User 
 def add_entry(body: EntryIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
     today = date.today()
     customer = _own_customer(db, user, body.customer_id)
+    entry_day = today
+    if body.entry_date is not None:
+        try:
+            check_backdate(body.entry_date, today)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+        entry_day = body.entry_date
     pending = shop_stats(db, user.shop_id, customer.id, today)["pending"]
     if body.kind == "payment" and body.amount > pending:
         raise HTTPException(400, f"Sirf Rs {pending:.0f} baaki hai")
     amount = body.amount if body.kind == "credit" else -body.amount
     db.add(KhataEntry(shop_id=user.shop_id, customer_id=customer.id, amount=amount,
-                      note=(body.note or ("udhaar" if amount > 0 else "payment")), created_on=today))
-    customer.last_visit = today
+                      note=(body.note or ("udhaar" if amount > 0 else "payment")), created_on=entry_day))
+    # a backdated entry never moves the last visit backwards
+    customer.last_visit = max(customer.last_visit, entry_day) if customer.last_visit else entry_day
     db.commit()
     return _card(db, customer, today)

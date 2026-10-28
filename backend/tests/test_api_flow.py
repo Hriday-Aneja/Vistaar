@@ -199,3 +199,121 @@ def test_good_login_resets_the_failure_count(client):
     assert client.post("/api/auth/login", json={"phone": "9000000004", "password": "vistaar123"}).status_code == 200
     for _ in range(3):  # 6 wrong tries in total, but the count restarted after the good login
         assert client.post("/api/auth/login", json=bad).status_code == 401
+
+# ---- backdating, impact basis and the real-mohalla demo story ----
+
+def _iso(days_ago):
+    from datetime import date, timedelta
+    return (date.today() - timedelta(days=days_ago)).isoformat()
+
+
+def _sell(client, h, pid, qty, **extra):
+    return client.post("/api/sales", json={"product_id": pid, "qty": qty, **extra}, headers=h)
+
+
+def test_backdated_sale_deducts_stock_counts_on_its_day_and_obeys_the_date_limits(client):
+    h = _register_real(client, "9144444441")
+    assert client.post("/api/stock/batches", headers=h, json={
+        "product_name": "Backdate Test Rice", "category": "Staples", "qty": 100,
+        "cost_price": 50, "sell_price": 60}).status_code == 201
+
+    def row():
+        return client.get("/api/stock", headers=h).json()[0]
+
+    pid = row()["product_id"]
+
+    # 30 days ago: stock goes down, but it is outside the 14-day rate window, so the daily rate stays 0
+    assert _sell(client, h, pid, 28, sold_on=_iso(30)).status_code == 201
+    assert row()["qty_left"] == 72 and row()["daily_rate"] == 0
+    # 3 days ago: inside the window, 14 units / 14 days = 1.0 a day
+    assert _sell(client, h, pid, 14, sold_on=_iso(3)).status_code == 201
+    assert row()["qty_left"] == 58 and row()["daily_rate"] == 1.0
+    # no date: still "now", and the response shape is unchanged
+    now_sale = _sell(client, h, pid, 14)
+    assert now_sale.status_code == 201 and set(now_sale.json()) == {"sale_ids", "qty"} and now_sale.json()["qty"] == 14
+    assert row()["qty_left"] == 44 and row()["daily_rate"] == 2.0
+    # today and exactly 60 days ago are fine
+    assert _sell(client, h, pid, 1, sold_on=_iso(0)).status_code == 201
+    assert _sell(client, h, pid, 1, sold_on=_iso(60)).status_code == 201
+    assert row()["qty_left"] == 42
+
+    # future and older than 60 days: 400 in Hinglish, nothing is deducted
+    future = _sell(client, h, pid, 1, sold_on=_iso(-1))
+    assert future.status_code == 400 and "Aane wali" in future.json()["detail"]
+    too_old = _sell(client, h, pid, 1, sold_on=_iso(61))
+    assert too_old.status_code == 400 and "60 din" in too_old.json()["detail"]
+    # a backdated sale still cannot sell more than is on the shelf
+    over = _sell(client, h, pid, 1000, sold_on=_iso(5))
+    assert over.status_code == 400 and "Sirf 42" in over.json()["detail"]
+    assert row()["qty_left"] == 42
+
+
+def test_backdated_udhaar_entry_feeds_the_khata_draft_and_obeys_the_date_limits(client):
+    h = _register_real(client, "9144444442")
+    cid = client.post("/api/udhaar/customers", headers=h,
+                      json={"name": "Backdate Customer", "phone": "9876500099"}).json()["id"]
+
+    def entry(kind, amount, **extra):
+        return client.post("/api/udhaar/entries", headers=h,
+                           json={"customer_id": cid, "kind": kind, "amount": amount, **extra})
+
+    def draft():
+        return [d for d in client.get("/api/khata/drafts", headers=h).json() if d["customer_id"] == cid]
+
+    first = entry("credit", 500, entry_date=_iso(20))
+    assert first.status_code == 201 and first.json()["pending"] == 500
+    assert first.json()["last_visit"] == _iso(0)  # a backdated entry never moves the last visit backwards
+    assert [d["overdue_days"] for d in draft()] == [20]
+
+    for bad in (_iso(-1), _iso(61)):
+        r = entry("credit", 100, entry_date=bad)
+        assert r.status_code == 400 and ("Aane wali" in r.json()["detail"] or "60 din" in r.json()["detail"])
+    assert entry("credit", 100, entry_date=_iso(60)).status_code == 201  # exactly 60 days is fine
+    assert entry("credit", 100).json()["pending"] == 700  # no date: today, same response as before
+
+    assert entry("payment", 5000, entry_date=_iso(10)).status_code == 400  # more than is pending
+    paid = entry("payment", 700, entry_date=_iso(10))
+    assert paid.status_code == 201 and paid.json()["pending"] == 0
+    assert draft() == []
+
+
+def test_impact_basis_says_demo_only_for_demo_shops(client):
+    demo = client.get("/api/impact", headers=_login(client)).json()
+    assert "(demo)" in demo["pool"]["basis"]
+    real = client.get("/api/impact", headers=_register_real(client, "9144444443")).json()
+    assert "(demo)" not in real["pool"]["basis"] and real["simulated"] is False
+    assert real["bulk"]["basis"] == demo["bulk"]["basis"]  # the savings assumption is labelled the same way
+
+
+def test_demo_real_builds_the_whole_story_and_is_safe_to_rerun(client, monkeypatch):
+    pytest.importorskip("httpx")
+    from app import demo_real
+
+    class UseTestClient:  # run the script against the in-process app, and do not close the shared client
+        def __enter__(self):
+            return client
+
+        def __exit__(self, *exc):
+            return False
+
+    monkeypatch.setattr(demo_real, "make_client", lambda: UseTestClient())
+    first = demo_real.main()
+    assert first["checks"] == {"pulse spike": True, "sales drop": True, "khata draft": True, "swap suggestion": True}
+    assert first["pulse"]["alerts"][0]["shops_spiking"] >= 4
+    assert first["drop"]["drop"]["drop_pct"] >= 40 and first["drop"]["days_of_data"] >= 17
+    assert first["khata"][0]["overdue_days"] == 20
+    assert first["swaps_out"]["proposals"][0]["qty"] > 0
+    assert "(demo)" not in first["impact"]["pool"]["basis"]
+
+    def snapshot():
+        out = {}
+        for i in range(6):
+            token = client.post("/api/auth/login", json={"phone": demo_real.phone(i), "password": demo_real.PASSWORD}).json()["token"]
+            rows = client.get("/api/stock", headers={"Authorization": f"Bearer {token}"}).json()
+            out[i] = sorted((r["product"], r["qty_left"]) for r in rows)
+        return out
+
+    before = snapshot()
+    again = demo_real.main()  # second run: nothing is added twice
+    assert snapshot() == before
+    assert again["checks"] == first["checks"]

@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useRef, useState } from "react";
+import AuthSide from "@/components/AuthSide";
 import { Field } from "@/components/ui";
 import { api, session } from "@/lib/api";
 import { toast } from "@/lib/toast";
@@ -40,10 +41,13 @@ export default function Register() {
   }
 
   return (
-    <div className="auth">
-      <div className="brand">Vistaar</div>
+    <div className="auth-page">
+      <AuthSide />
+      <section className="auth-main">
+        <div className="auth-card">
+      <h2 className="auth-title">Dukaan jodo</h2>
       <p className="sub">Apni dukaan jodo. Sab data aapka apna rahega.</p>
-      <form className="box" ref={form} onSubmit={submit}>
+      <form className="auth-form" ref={form} onSubmit={submit}>
         <Field label="Aapka naam"><input name="name" autoComplete="name" required /></Field>
         <Field label="Mobile number"><input name="phone" inputMode="numeric" autoComplete="tel" maxLength={14} required /></Field>
         <Field label="Password (kam se kam 6)"><input name="password" type="password" minLength={6} autoComplete="new-password" required /></Field>
@@ -58,6 +62,8 @@ export default function Register() {
         <button className="btn" type="submit" disabled={busy}>Dukaan jodo</button>
       </form>
       <p className="note">Pehle se account hai? <Link href="/login">Login karo</Link></p>
+        </div>
+      </section>
     </div>
   );
 }

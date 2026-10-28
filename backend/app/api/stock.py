@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
@@ -8,6 +8,7 @@ from app.db.session import get_db
 from app.deps import current_user
 from app.db.models import Batch, Product, Sale, User
 from app.schemas import BatchIn, SaleIn
+from app.services.backdate import check_backdate, noon_of
 from app.services.catalog import CATEGORY_SHELF_DAYS, get_or_create_product
 from app.services.expiry import assess, effective_expiry
 from app.services.inventory import daily_rate
@@ -65,6 +66,13 @@ def list_stock(db: Session = Depends(get_db), user: User = Depends(current_user)
 
 @router.post("/sales", status_code=201)
 def record_sale(body: SaleIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    when = {}  # empty = the column default, i.e. now
+    if body.sold_on is not None:
+        try:
+            check_backdate(body.sold_on, date.today())
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+        when = {"sold_at": noon_of(body.sold_on)}
     batches = db.scalars(
         select(Batch).where(Batch.shop_id == user.shop_id, Batch.product_id == body.product_id, Batch.qty_left > 0)
         .order_by(Batch.expiry_date.is_(None), Batch.expiry_date, Batch.received_on)
@@ -80,7 +88,7 @@ def record_sale(body: SaleIn, db: Session = Depends(get_db), user: User = Depend
         price = body.unit_price or batch.sell_price
         batch.qty_left -= take
         sale = Sale(shop_id=user.shop_id, product_id=body.product_id, batch_id=batch.id, qty=take,
-                    amount=round(take * price, 2), is_simulated=0)
+                    amount=round(take * price, 2), is_simulated=0, **when)
         db.add(sale)
         db.flush()
         sale_ids.append(sale.id)

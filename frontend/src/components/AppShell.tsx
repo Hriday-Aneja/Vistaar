@@ -39,7 +39,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
     <>
       <header className="topbar">
         <div className="wrap">
-          <span className="brand">Vistaar</span>
+          <Link href="/" className="brand">Vistaar</Link>
           <span className="shopname">{shop}</span>
           <button className="btn ghost small" onClick={logout}>Logout</button>
         </div>

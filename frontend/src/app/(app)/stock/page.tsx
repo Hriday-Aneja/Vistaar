@@ -8,6 +8,13 @@ import { useLoad } from "@/lib/useLoad";
 const RISK: Record<string, string> = { none: "Khatam", expired: "Expire", high: "Zyada risk", medium: "Thoda risk", low: "Theek" };
 const SRC: Record<string, string> = { entered: "daali gayi", default: "andaaza", inferred: "andaaza" };
 
+// YYYY-MM-DD in the shop's local time, for the date input (the server allows today back to 60 days ago)
+const isoDay = (daysAgo = 0) => {
+  const d = new Date();
+  d.setDate(d.getDate() - daysAgo);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+
 export default function Stock() {
   const { data, error, loading, reload } = useLoad(async () => ({
     rows: await api<any[]>("/stock"), categories: await api<any[]>("/categories"),
@@ -38,8 +45,11 @@ export default function Stock() {
     e.preventDefault();
     const form = e.currentTarget;
     const f = new FormData(form);
+    const body: any = { product_id: Number(f.get("product")), qty: Number(f.get("qty")) };
+    const day = String(f.get("sold_on") ?? "");
+    if (day && day !== isoDay()) body.sold_on = day; // today = no date, the server stamps "now"
     try {
-      await api("/sales", { method: "POST", body: { product_id: Number(f.get("product")), qty: Number(f.get("qty")) } });
+      await api("/sales", { method: "POST", body });
       toast("Bikri likh li"); form.reset(); reload();
     } catch (err: any) { toast(err.message, true); }
   }
@@ -76,7 +86,9 @@ export default function Stock() {
                   {[...products].map(([id, p]) => <option key={id} value={id}>{p.name} ({p.qty} bache)</option>)}
                 </select></Field>
                 <Field label="Kitna"><input name="qty" type="number" min={1} required inputMode="numeric" /></Field>
+                <Field label="Kis din bika"><input name="sold_on" type="date" defaultValue={isoDay()} min={isoDay(60)} max={isoDay()} /></Field>
               </div>
+              <p className="sub">Purani bikri likhni ho to date badlo (60 din tak).</p>
               <button className="btn" type="submit">Bikri likho</button>
             </form>
           </details>

@@ -94,3 +94,4 @@ class SaleIn(BaseModel):
     product_id: int
     qty: int = Field(gt=0, le=100000)
     unit_price: Optional[float] = Field(default=None, gt=0)
+    sold_on: Optional[date] = None  # backdated sale; omitted = now (checked in api/stock.py)

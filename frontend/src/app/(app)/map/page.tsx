@@ -20,10 +20,10 @@ export default function MapPage() {
       ]);
       const dot = (color: string, r: number) => new Style({ image: new Circle({ radius: r, fill: new Fill({ color }), stroke: new Stroke({ color: "#fff", width: 2 }) }) });
       const mine = new Feature(new Point(fromLonLat([data.me.lng, data.me.lat])));
-      mine.setStyle(dot("#D9A441", 9));
+      mine.setStyle(dot("#B38547", 9));
       const others = data.nearby.map((s: any) => {
         const f = new Feature(new Point(fromLonLat([s.lng, s.lat])));
-        f.setStyle(dot("#1F4D36", 7));
+        f.setStyle(dot("#2E2A25", 7));
         return f;
       });
       map = new OlMap({
